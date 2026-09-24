@@ -296,17 +296,76 @@
   var $ = function(id){ return document.getElementById(id); };
 
   /* ---------- traducción (MyMemory) ---------- */
+  function cleanText(t){
+    var s = String(t || "");
+    // decodificar códigos HTML (&#x0D;, &amp;, &quot;, etc.)
+    try{
+      var box = document.createElement("textarea");
+      box.innerHTML = s;
+      s = box.value;
+    }catch(e){}
+    s = s.replace(/&#x?[0-9a-fA-F]+;/g, " ");   // por si quedó alguno sin decodificar
+    s = s.replace(/[\r\n\t\u000b\u000c\u0085\u00a0]+/g, " ");
+    s = s.replace(/\s+/g, " ").trim();
+    s = s.replace(/^[\s"'«»“”„\u2018\u2019]+/, "");
+    s = s.replace(/[\s"'«»“”„\u2018\u2019]+$/, "");
+    return s.trim();
+  }
+
+  function bare(s){
+    return cleanText(s).toLowerCase()
+      .normalize("NFD").replace(/[\u0300-\u036f]/g,"")
+      .replace(/[^a-z0-9ñ ]/g," ").replace(/\s+/g," ").trim();
+  }
+
+  function pickBest(data, original){
+    var src = bare(original);
+    var list = (data && Array.isArray(data.matches)) ? data.matches : [];
+    var cands = [];
+
+    for(var i=0;i<list.length;i++){
+      var m = list[i];
+      var txt = cleanText(m && m.translation);
+      if(!txt) continue;
+      var nb = bare(txt);
+      if(!nb) continue;
+      if(nb === src) continue;                 // registro basura: devuelve lo mismo que escribiste
+      var mt = /^mt!?$/i.test(String(m["created-by"] || ""));
+      var match = parseFloat(m.match);
+      if(isNaN(match)) match = 0;
+      var quality = parseFloat(m.quality);
+      if(isNaN(quality)) quality = 50;
+      var usage = parseFloat(m["usage-count"]);
+      if(isNaN(usage)) usage = 0;
+      var score = (match * 100) + (quality * 0.5) + Math.min(usage, 50) * 0.2 + (mt ? 8 : 0);
+      cands.push({ text: txt, score: score, mt: mt });
+    }
+
+    if(cands.length){
+      cands.sort(function(a,b){ return b.score - a.score; });
+      return cands[0].text;
+    }
+
+    // sin candidatos limpios: lo que haya devuelto la API
+    var fb = cleanText(data && data.responseData && data.responseData.translatedText);
+    if(fb && bare(fb) !== src) return fb;
+    return "";
+  }
+
   function mmTranslate(text, pair){
-    var url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text) + "&langpair=" + encodeURIComponent(pair);
+    var url = "https://api.mymemory.translated.net/get?q=" + encodeURIComponent(text) +
+              "&langpair=" + encodeURIComponent(pair) + "&mt=1";
     return fetch(url).then(function(r){
       if(!r.ok) throw new Error("No hubo respuesta del traductor.");
       return r.json();
     }).then(function(d){
-      var t = (d && d.responseData && d.responseData.translatedText) ? String(d.responseData.translatedText) : "";
-      if(!t) throw new Error("El traductor no devolvió nada.");
-      if(/ALL AVAILABLE FREE TRANSLATIONS/i.test(t)) throw new Error("Se agotaron las traducciones gratuitas de hoy. Vuelve mañana.");
-      if(/MYMEMORY WARNING|QUERY LENGTH LIMIT|INVALID LANGUAGE/i.test(t)) throw new Error("El traductor rechazó la frase. Prueba con una más corta.");
-      return t;
+      var raw = (d && d.responseData && d.responseData.translatedText) ? String(d.responseData.translatedText) : "";
+      if(d && d.quotaFinished) throw new Error("Se agotaron las traducciones gratuitas de hoy. Vuelve mañana.");
+      if(/ALL AVAILABLE FREE TRANSLATIONS/i.test(raw)) throw new Error("Se agotaron las traducciones gratuitas de hoy. Vuelve mañana.");
+      if(/MYMEMORY WARNING|QUERY LENGTH LIMIT|INVALID LANGUAGE/i.test(raw)) throw new Error("El traductor rechazó la frase. Prueba con una más corta.");
+      var best = pickBest(d, text);
+      if(!best) throw new Error("No se encontró una traducción confiable para esto.");
+      return best;
     });
   }
 
