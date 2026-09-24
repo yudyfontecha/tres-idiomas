@@ -1,5 +1,5 @@
 /* Red primero: siempre trae la versión nueva. La copia local solo si no hay internet. */
-var CACHE = "tres-idiomas-v5";
+var CACHE = "tres-idiomas-v6";
 var SHELL = ["./","./index.html","./app.css","./app.js","./manifest.json","./icon-192.png","./icon-512.png"];
 self.addEventListener("install", function(e){
   self.skipWaiting();

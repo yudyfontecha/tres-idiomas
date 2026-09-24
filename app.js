@@ -152,6 +152,61 @@
     });
   }
 
+  /* ---------- pantalla despierta ---------- */
+  var wakeLock = null;
+  function keepAwake(){
+    if(!("wakeLock" in navigator)) return;
+    if(wakeLock) return;
+    try{
+      navigator.wakeLock.request("screen").then(function(w){
+        wakeLock = w;
+        w.addEventListener("release", function(){ wakeLock = null; });
+      }, function(){});
+    }catch(e){}
+  }
+  function letSleep(){
+    if(wakeLock){ try{ wakeLock.release(); }catch(e){} wakeLock = null; }
+  }
+  document.addEventListener("visibilitychange", function(){
+    if(document.visibilityState === "visible" && state.looping) keepAwake();
+  });
+
+  /* ---------- guardado permanente del audio ---------- */
+  var db = null, dbReady = null;
+  function openDB(){
+    if(dbReady) return dbReady;
+    dbReady = new Promise(function(resolve){
+      if(!window.indexedDB){ resolve(null); return; }
+      var req;
+      try{ req = indexedDB.open("tres-idiomas-voz", 1); }catch(e){ resolve(null); return; }
+      req.onupgradeneeded = function(){
+        var d = req.result;
+        if(!d.objectStoreNames.contains("voz")) d.createObjectStore("voz");
+      };
+      req.onsuccess = function(){ db = req.result; resolve(db); };
+      req.onerror = function(){ resolve(null); };
+    });
+    return dbReady;
+  }
+  function dbGet(key){
+    return openDB().then(function(d){
+      if(!d) return null;
+      return new Promise(function(resolve){
+        try{
+          var tx = d.transaction("voz","readonly").objectStore("voz").get(key);
+          tx.onsuccess = function(){ resolve(tx.result || null); };
+          tx.onerror = function(){ resolve(null); };
+        }catch(e){ resolve(null); }
+      });
+    });
+  }
+  function dbPut(key, blob){
+    return openDB().then(function(d){
+      if(!d) return;
+      try{ d.transaction("voz","readwrite").objectStore("voz").put(blob, key); }catch(e){}
+    });
+  }
+
   /* ---------- voz ---------- */
   var audioCache = {};   /* clave: idioma|texto  ->  URL del audio */
   var cacheKeys = [];
@@ -173,10 +228,28 @@
     return new Blob([buf], { type:"audio/wav" });
   }
 
+  function remember(ck, blob){
+    var url = URL.createObjectURL(blob);
+    audioCache[ck] = url;
+    cacheKeys.push(ck);
+    while(cacheKeys.length > 60){
+      var old = cacheKeys.shift();
+      try{ URL.revokeObjectURL(audioCache[old]); }catch(e){}
+      delete audioCache[old];
+    }
+    return url;
+  }
+
   function fetchVoice(text, L){
     var ck = L.code + "|" + text;
     if(audioCache[ck]) return Promise.resolve(audioCache[ck]);
+    return dbGet(ck).then(function(blob){
+      if(blob) return remember(ck, blob);
+      return askVoice(text, L, ck);
+    });
+  }
 
+  function askVoice(text, L, ck){
     var body = {
       contents: [ { parts: [ { text: "Read the following aloud in " + L.say + ", naturally: " + text } ] } ],
       generationConfig: {
@@ -214,15 +287,8 @@
         } else {
           blob = pcmToWav(inl, rate);
         }
-        var url = URL.createObjectURL(blob);
-        audioCache[ck] = url;
-        cacheKeys.push(ck);
-        while(cacheKeys.length > 60){
-          var old = cacheKeys.shift();
-          try{ URL.revokeObjectURL(audioCache[old]); }catch(e){}
-          delete audioCache[old];
-        }
-        return url;
+        dbPut(ck, blob);
+        return remember(ck, blob);
       }, function(){ return attempt(); });
     }
     return attempt();
@@ -549,20 +615,21 @@
   $("loopBtn").addEventListener("click", function(){
     if(!hasPhrases()){ $("loopHint").textContent = "Traduce algo primero."; return; }
     if(state.looping){
-      state.looping = false; stopAudio(); markNow("");
+      state.looping = false; stopAudio(); letSleep(); markNow("");
       $("loopHint").textContent = "Cuando lo tengas en el oído, pasa a Repetir";
       renderAprender();
       return;
     }
     state.looping = true;
-    $("loopHint").textContent = "Sonando… toca Parar cuando quieras";
+    keepAwake();
+    $("loopHint").textContent = "Sonando… la pantalla se queda encendida. Toca Parar cuando quieras";
     renderAprender();
     runLoop();
   });
 
   $("stepOir").addEventListener("click", function(){ state.etapa = "oir"; renderAprender(); });
   $("stepDecir").addEventListener("click", function(){
-    state.looping = false; stopAudio(); state.etapa = "decir";
+    state.looping = false; stopAudio(); letSleep(); state.etapa = "decir";
     $("result").className = "result hidden";
     renderAprender();
   });
@@ -613,7 +680,7 @@
     var L = lang(state.focus), phrase = phraseOf(L.code);
     if(!phrase){ $("decirHint").textContent = "Traduce algo primero."; return; }
     if(micDecir.getAttribute("data-on") === "true"){ stopListening(); return; }
-    state.looping = false; stopAudio();
+    state.looping = false; stopAudio(); letSleep();
     micDecir.setAttribute("data-on","true");
     $("decirHint").textContent = "Escuchando…";
     $("result").className = "result hidden";
@@ -795,7 +862,7 @@
       $("view-"+k).className = (k === m) ? "" : "hidden";
     });
     state.looping = false;
-    stopAudio(); stopListening();
+    stopAudio(); stopListening(); letSleep();
     if(m === "aprender") renderAprender();
     if(m === "conversar") renderConv();
   }
