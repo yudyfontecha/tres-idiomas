@@ -1,22 +1,15 @@
-/* Tres idiomas — service worker
-   Red primero: siempre intenta traer la versión nueva del servidor.
-   La copia guardada solo se usa si no hay internet. */
-var CACHE = "tres-idiomas-v2";
-var SHELL = ["./", "./index.html", "./app.css", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
-
+/* Red primero: siempre trae la versión nueva. La copia local solo si no hay internet. */
+var CACHE = "tres-idiomas-v5";
+var SHELL = ["./","./index.html","./app.css","./app.js","./manifest.json","./icon-192.png","./icon-512.png"];
 self.addEventListener("install", function(e){
   self.skipWaiting();
   e.waitUntil(caches.open(CACHE).then(function(c){ return c.addAll(SHELL).catch(function(){}); }));
 });
-
 self.addEventListener("activate", function(e){
-  e.waitUntil(
-    caches.keys().then(function(keys){
-      return Promise.all(keys.map(function(k){ if(k !== CACHE) return caches.delete(k); }));
-    }).then(function(){ return self.clients.claim(); })
-  );
+  e.waitUntil(caches.keys().then(function(keys){
+    return Promise.all(keys.map(function(k){ if(k !== CACHE) return caches.delete(k); }));
+  }).then(function(){ return self.clients.claim(); }));
 });
-
 self.addEventListener("fetch", function(e){
   var req = e.request;
   if(req.method !== "GET") return;

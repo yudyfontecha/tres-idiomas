@@ -14,14 +14,7 @@
   media-src 'self' blob:;
   manifest-src 'self';
   worker-src 'self';
-  connect-src 'self'
-    https://lingva.ml
-    https://translate.plausibility.cloud
-    https://lingva.lunar.icu
-    https://translate.projectsegfau.lt
-    https://lingva.garudalinux.org
-    https://translate.dr460nf1r3.org
-    https://api.mymemory.translated.net;
+  connect-src 'self' https://generativelanguage.googleapis.com;
   base-uri 'none';
   form-action 'none';
   frame-ancestors 'none';
@@ -33,48 +26,96 @@
 <link rel="manifest" href="manifest.json">
 <link rel="apple-touch-icon" href="icon-192.png">
 <link rel="icon" href="icon-192.png">
-
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700&family=Fraunces:opsz,wght@9..144,400;9..144,600&display=swap" rel="stylesheet">
-<link href="app.css?v=2" rel="stylesheet">
+<link href="app.css?v=5" rel="stylesheet">
 </head>
 <body>
 <div class="wrap">
 
   <header>
     <h1>Tres idiomas</h1>
-    <span class="sub" id="netTag"></span>
+    <button class="linkish" id="openKey">Mi clave</button>
   </header>
 
-  <div class="modes" role="tablist" aria-label="Modo">
+  <!-- clave -->
+  <section id="view-clave" class="hidden">
+    <div class="panel">
+      <h2>Tu clave de Google</h2>
+      <p class="muted">Se guarda solo en este dispositivo. Nunca sale de aquí, salvo hacia Google cuando traduces.</p>
+      <input id="keyInput" type="password" placeholder="Pega tu clave" autocomplete="off" spellcheck="false">
+      <div class="panel-actions">
+        <button class="btn" id="saveKey">Guardar</button>
+        <button class="linkish" id="forgetKey">Borrar la clave de este dispositivo</button>
+      </div>
+      <div class="muted" id="keyState"></div>
+    </div>
+  </section>
+
+  <div class="modes" role="tablist" aria-label="Modo" id="modes">
     <button role="tab" id="tab-traducir" aria-selected="true" data-mode="traducir">Traducir</button>
+    <button role="tab" id="tab-aprender" aria-selected="false" data-mode="aprender">Aprender</button>
     <button role="tab" id="tab-conversar" aria-selected="false" data-mode="conversar">Conversar</button>
-    <button role="tab" id="tab-practicar" aria-selected="false" data-mode="practicar">Practicar</button>
   </div>
 
+  <!-- traducir -->
   <section id="view-traducir">
     <div class="stage">
       <button class="mic" id="micEs" aria-label="Hablar en español"></button>
       <div class="mic-hint" id="hintEs">Toca y habla en español</div>
     </div>
-
     <div class="typed">
       <input id="inEs" type="text" placeholder="…o escríbelo aquí" autocomplete="off" enterkeyhint="go">
       <button id="goEs">Traducir</button>
     </div>
-
     <div class="said" id="saidEs"></div>
     <div class="cards" id="cards"></div>
-    <div class="note" id="engineNote"></div>
+    <div class="note" id="noteT"></div>
+  </section>
 
-    <div class="speed">
-      <label for="rate">Velocidad de la voz</label>
-      <input type="range" id="rate" min="0.6" max="1.1" step="0.05" value="0.85">
-      <span id="rateVal">0.85</span>
+  <!-- aprender -->
+  <section id="view-aprender" class="hidden">
+    <div class="phrase-es" id="aprEs">Traduce algo primero</div>
+
+    <div class="steps">
+      <button class="step" id="stepOir" aria-selected="true">1. Escuchar</button>
+      <button class="step" id="stepDecir" aria-selected="false">2. Repetir</button>
+    </div>
+
+    <!-- etapa escuchar -->
+    <div id="etapaOir">
+      <div class="listlangs" id="oirList"></div>
+      <div class="stage">
+        <button class="mic wide" id="loopBtn">Escuchar en bucle</button>
+        <div class="mic-hint" id="loopHint">Suena en los tres idiomas, una y otra vez, hasta que lo pares</div>
+      </div>
+    </div>
+
+    <!-- etapa repetir -->
+    <div id="etapaDecir" class="hidden">
+      <div class="focus" id="focusCard">
+        <div class="focus-lang" id="focusLang"></div>
+        <div class="focus-text" id="focusText"></div>
+        <button class="linkish" id="focusListen">Escucharla</button>
+      </div>
+      <div class="stage">
+        <button class="mic" id="micDecir" aria-label="Decir la frase"></button>
+        <div class="mic-hint" id="decirHint">Toca y dila</div>
+      </div>
+      <div class="result hidden" id="result">
+        <div class="pct" id="resPct"></div>
+        <div class="verdict" id="resVerdict"></div>
+        <div class="heard" id="resHeard"></div>
+      </div>
+      <div class="advance">
+        <button class="btn ghost" id="nextLang">Siguiente idioma</button>
+        <div class="muted" id="advanceNote"></div>
+      </div>
     </div>
   </section>
 
+  <!-- conversar -->
   <section id="view-conversar" class="hidden">
     <div class="chips" id="convChips"></div>
     <div class="stage">
@@ -91,38 +132,14 @@
     <div class="said" id="convHeard"></div>
   </section>
 
-  <section id="view-practicar" class="hidden">
-    <div class="chips" id="pracChips"></div>
-    <div class="target">
-      <div class="lead" id="pracLead">Di esta frase en voz alta</div>
-      <div class="text" id="pracText">Traduce algo primero y vuelve aquí</div>
-      <div class="target-actions">
-        <button class="linkish" id="pracListen">Escucharla primero</button>
-      </div>
-    </div>
-    <div class="stage">
-      <button class="mic" id="micPrac" aria-label="Decir la frase"></button>
-      <div class="mic-hint" id="hintPrac">Toca y dila</div>
-    </div>
-    <div class="score hidden" id="score">
-      <div class="pct" id="scorePct"></div>
-      <div class="verdict" id="scoreVerdict"></div>
-      <div class="heard" id="scoreHeard"></div>
-    </div>
-  </section>
-
   <div class="hist-head">
     <h2>Tus frases</h2>
     <button class="linkish" id="clearHist">Borrar todo</button>
   </div>
   <div class="hist" id="hist"></div>
 
-  <p class="foot-note">
-    Tus frases se guardan solo en este dispositivo.<br>
-    Traducción y pronunciación: Lingva, con MyMemory de respaldo.
-  </p>
-
+  <p class="foot-note">Tus frases se guardan solo en este dispositivo.</p>
 </div>
-<script src="app.js?v=2"></script>
+<script src="app.js?v=5"></script>
 </body>
 </html>
