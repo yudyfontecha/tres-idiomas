@@ -1,6 +1,8 @@
-/* Tres idiomas - service worker */
-var CACHE = "tres-idiomas-v1";
-var SHELL = ["./", "./index.html", "./manifest.json", "./icon-192.png", "./icon-512.png"];
+/* Tres idiomas — service worker
+   Red primero: siempre intenta traer la versión nueva del servidor.
+   La copia guardada solo se usa si no hay internet. */
+var CACHE = "tres-idiomas-v2";
+var SHELL = ["./", "./index.html", "./app.css", "./app.js", "./manifest.json", "./icon-192.png", "./icon-512.png"];
 
 self.addEventListener("install", function(e){
   self.skipWaiting();
@@ -18,8 +20,7 @@ self.addEventListener("activate", function(e){
 self.addEventListener("fetch", function(e){
   var req = e.request;
   if(req.method !== "GET") return;
-  var url = new URL(req.url);
-  if(url.origin !== self.location.origin) return;   // el traductor y las fuentes van directo a la red
+  if(new URL(req.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(req).then(function(res){
       var copy = res.clone();
