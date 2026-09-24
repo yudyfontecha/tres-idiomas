@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Prueba del motor</title>
+<style>
+  body{margin:0;background:#E9EDE4;color:#19211C;font-family:system-ui,-apple-system,Segoe UI,Arial,sans-serif;line-height:1.5}
+  .wrap{max-width:560px;margin:0 auto;padding:24px 16px 60px}
+  h1{font-size:21px;margin:0 0 4px}
+  p.lead{margin:0 0 20px;color:#5A6A5E;font-size:14px}
+  label{display:block;font-size:13px;font-weight:600;margin:16px 0 6px}
+  input{width:100%;padding:12px 14px;font-size:16px;border:1px solid #CFD7C6;border-radius:12px;background:#F6F8F2;color:#19211C}
+  button{margin-top:16px;width:100%;padding:14px;font-size:16px;font-weight:700;border:0;border-radius:12px;background:#19211C;color:#F6F8F2;cursor:pointer}
+  button:disabled{opacity:.5;cursor:default}
+  .out{margin-top:22px}
+  .row{background:#F6F8F2;border:1px solid #CFD7C6;border-left:6px solid var(--c);border-radius:12px;padding:12px 14px;margin-bottom:10px}
+  .row .n{font-size:11.5px;font-weight:700;color:var(--c)}
+  .row .t{font-size:20px;font-weight:600;word-wrap:break-word}
+  .err{background:#FBEDEF;border:1px solid #E0B6C0;border-radius:12px;padding:12px 14px;font-size:13.5px;white-space:pre-wrap;word-wrap:break-word;margin-top:16px}
+  .ok{background:#E7F0E9;border:1px solid #A9C6B2;border-radius:12px;padding:12px 14px;font-size:14px;margin-top:16px}
+  .hint{font-size:12.5px;color:#5A6A5E;margin-top:10px}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Prueba del motor</h1>
+  <p class="lead">Esto no es la app. Es solo para comprobar si Gemini traduce bien antes de construir.</p>
+
+  <label for="key">Pega aquí tu clave</label>
+  <input id="key" type="password" placeholder="La clave que guardaste" autocomplete="off" spellcheck="false">
+  <div class="hint">Se queda solo en este navegador. No se envía a ningún lado más que a Google.</div>
+
+  <label for="frase">Frase en español</label>
+  <input id="frase" type="text" value="hola" autocomplete="off">
+
+  <button id="go">Probar</button>
+
+  <div class="out" id="out"></div>
+</div>
+
+<script>
+(function(){
+  "use strict";
+  var $ = function(id){ return document.getElementById(id); };
+  var LANGS = [
+    { k:"en", label:"Inglés",     c:"#8C1D3F" },
+    { k:"no", label:"Noruego",    c:"#14524A" },
+    { k:"nl", label:"Neerlandés", c:"#9A5B08" }
+  ];
+
+  try{
+    var saved = localStorage.getItem("prueba-key");
+    if(saved) $("key").value = saved;
+  }catch(e){}
+
+  function show(node){ var o = $("out"); o.textContent = ""; o.appendChild(node); }
+
+  function errBox(msg){
+    var d = document.createElement("div");
+    d.className = "err";
+    d.textContent = msg;
+    return d;
+  }
+
+  $("go").addEventListener("click", function(){
+    var key = $("key").value.trim();
+    var frase = $("frase").value.trim();
+    if(!key){ show(errBox("Falta la clave.")); return; }
+    if(!frase){ show(errBox("Falta la frase.")); return; }
+    try{ localStorage.setItem("prueba-key", key); }catch(e){}
+
+    $("go").disabled = true;
+    var loading = document.createElement("div");
+    loading.className = "ok";
+    loading.textContent = "Preguntando a Gemini…";
+    show(loading);
+
+    var prompt =
+      "Traduce la siguiente frase del español al inglés, al noruego bokmål y al neerlandés.\n" +
+      "Responde ÚNICAMENTE con un objeto JSON, sin explicaciones y sin marcas de código.\n" +
+      'Formato exacto: {"en":"...","no":"...","nl":"..."}\n\n' +
+      "Frase: " + frase;
+
+    fetch("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent", {
+      method: "POST",
+      headers: { "Content-Type":"application/json", "x-goog-api-key": key },
+      body: JSON.stringify({ contents: [ { parts: [ { text: prompt } ] } ] })
+    })
+    .then(function(r){
+      return r.text().then(function(txt){ return { ok:r.ok, status:r.status, txt:txt }; });
+    })
+    .then(function(res){
+      $("go").disabled = false;
+      if(!res.ok){
+        show(errBox("Google respondió con error " + res.status + ":\n\n" + res.txt.slice(0,700)));
+        return;
+      }
+      var data;
+      try{ data = JSON.parse(res.txt); }
+      catch(e){ show(errBox("Respuesta ilegible:\n\n" + res.txt.slice(0,700))); return; }
+
+      var out = "";
+      try{
+        var parts = data.candidates[0].content.parts;
+        for(var i=0;i<parts.length;i++){ if(parts[i].text) out += parts[i].text; }
+      }catch(e){}
+      if(!out){ show(errBox("Gemini no devolvió texto:\n\n" + res.txt.slice(0,700))); return; }
+
+      var clean = out.replace(/```json/gi,"").replace(/```/g,"").trim();
+      var tr;
+      try{ tr = JSON.parse(clean); }
+      catch(e){ show(errBox("Gemini contestó, pero no en el formato pedido:\n\n" + clean.slice(0,700))); return; }
+
+      var box = document.createElement("div");
+      LANGS.forEach(function(L){
+        var row = document.createElement("div");
+        row.className = "row";
+        row.style.setProperty("--c", L.c);
+        var n = document.createElement("div");
+        n.className = "n";
+        n.textContent = L.label;
+        var t = document.createElement("div");
+        t.className = "t";
+        t.textContent = tr[L.k] ? String(tr[L.k]) : "(vacío)";
+        row.appendChild(n); row.appendChild(t);
+        box.appendChild(row);
+      });
+      var ok = document.createElement("div");
+      ok.className = "ok";
+      ok.textContent = "El motor respondió. Revisa si las tres traducciones están bien.";
+      box.appendChild(ok);
+      show(box);
+    })
+    .catch(function(e){
+      $("go").disabled = false;
+      show(errBox("No se pudo conectar. Puede ser internet, o que el navegador bloqueó la llamada.\n\n" + (e && e.message ? e.message : "")));
+    });
+  });
+})();
+</script>
+</body>
+</html>
